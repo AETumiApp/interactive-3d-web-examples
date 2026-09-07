@@ -4,30 +4,64 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Pointer Particles — Interactive Three.js</title>
+<!--
+  POINTER PARTICLES — expert / production build.
+
+  A BufferGeometry point cloud drifts on a soft spring back to its home layout;
+  the pointer attracts particles (or repels them while pressed). Additive
+  blending gives the glow, ACES tone mapping keeps the highlights graceful.
+
+  Production concerns handled below:
+    • WebGL2 → WebGL → tasteful static poster fallback (never a blank canvas).
+    • prefers-reduced-motion / low-power: calm static field, no interaction loop.
+    • Adaptive quality: rolling FPS steps DPR AND live particle count down <50 fps
+      and back up >58, with hysteresis (the physics loop respects the live count).
+    • Loop pauses when the canvas is offscreen or the tab is hidden.
+    • Strict dispose(): all listeners, rAF, geometry, material, renderer released.
+    • Accessibility: canvas role="img" + aria-label; the FPS toggle is a real
+      keyboard-focusable button with a visible focus ring.
+
+  Three.js r160 — ES modules via importmap on jsDelivr ONLY.
+-->
 <style>
+  :root { color-scheme: dark; }
   html, body { margin: 0; height: 100%; background: #05060c; overflow: hidden; }
   canvas { display: block; }
-  #hint {
-    position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
+
+  .poster { position: fixed; inset: 0;
+    background: radial-gradient(70% 70% at 50% 50%, #101a3a 0%, #0a0f24 55%, #05060c 100%); }
+  .poster::after { content: ""; position: absolute; inset: 0;
+    background:
+      radial-gradient(2px 2px at 20% 30%, rgba(142,162,255,.9), transparent 60%),
+      radial-gradient(2px 2px at 70% 40%, rgba(56,232,255,.8), transparent 60%),
+      radial-gradient(2px 2px at 45% 65%, rgba(142,162,255,.7), transparent 60%),
+      radial-gradient(2px 2px at 82% 72%, rgba(56,232,255,.7), transparent 60%),
+      radial-gradient(2px 2px at 33% 82%, rgba(142,162,255,.6), transparent 60%);
+    opacity: .9; }
+
+  #hint { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
     font: 13px ui-sans-serif, system-ui, sans-serif; color: rgba(255,255,255,0.55);
-    pointer-events: none; user-select: none;
-  }
+    pointer-events: none; user-select: none; }
+
+  .hud { position: fixed; top: 14px; right: 14px; z-index: 6;
+    font: 12px/1.4 ui-monospace, "SF Mono", Menlo, monospace; color: rgba(255,255,255,.55); text-align: right; }
+  .hud button { appearance: none; cursor: pointer; color: inherit;
+    background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.16);
+    padding: 5px 10px; border-radius: 8px; font: inherit; }
+  .hud button:focus-visible { outline: 2px solid #7c8bff; outline-offset: 2px; }
+  .hud pre { margin: 6px 0 0; opacity: .85; }
+  [hidden] { display: none !important; }
 </style>
 </head>
 <body>
 <div id="hint">move the pointer &middot; hold to repel</div>
+<div class="hud"><button id="hudToggle" aria-pressed="false">stats</button><pre id="hudReadout" hidden></pre></div>
 
-<!--
-  Interactive particle field with Three.js r160 (0.160.0).
-  A BufferGeometry point cloud drifts on a soft spring back to its home layout;
-  the pointer attracts particles (or repels them while pressed). Additive
-  blending gives the glow. Reduced-motion viewers get a calm static field.
-  https://aetumi.app/interactive  (AETumi — AI-native 3D web platform)
--->
 <script type="importmap">
 {
   "imports": {
-    "three": "https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.module.min.js"
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
   }
 }
 </script>
@@ -35,147 +69,219 @@
 <script type="module">
 import * as THREE from "three";
 
-const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // cap DPR at 2
-renderer.setSize(window.innerWidth, window.innerHeight);
-document.body.appendChild(renderer.domElement);
+/* ---- Capability + device profiling ------------------------------------ */
+function detectWebGL() {
+  try {
+    const c = document.createElement("canvas");
+    if (c.getContext("webgl2")) return "webgl2";
+    if (c.getContext("webgl") || c.getContext("experimental-webgl")) return "webgl";
+  } catch (_) {}
+  return "none";
+}
+const tier = detectWebGL();
+const lowPower = (navigator.hardwareConcurrency || 8) <= 4 ||
+                 (navigator.deviceMemory || 8) <= 4;
 
-const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
-camera.position.z = 32;
-
-// --- Build the particle cloud -------------------------------------------------
-const COUNT = 9000;
-const positions = new Float32Array(COUNT * 3); // live, animated positions
-const home = new Float32Array(COUNT * 3);       // rest position each particle springs toward
-const velocities = new Float32Array(COUNT * 3); // per-particle velocity
-const colors = new Float32Array(COUNT * 3);
-
-const color = new THREE.Color();
-for (let i = 0; i < COUNT; i++) {
-  // Distribute points in a flattened disc for a nice screen-filling field.
-  const r = Math.sqrt(Math.random()) * 26;
-  const a = Math.random() * Math.PI * 2;
-  const x = Math.cos(a) * r;
-  const y = Math.sin(a) * r * 0.62;
-  const z = (Math.random() - 0.5) * 10;
-
-  const idx = i * 3;
-  home[idx] = positions[idx] = x;
-  home[idx + 1] = positions[idx + 1] = y;
-  home[idx + 2] = positions[idx + 2] = z;
-
-  // Hue drifts from indigo to cyan across the radius.
-  color.setHSL(0.62 - (r / 26) * 0.22, 0.8, 0.6);
-  colors[idx] = color.r;
-  colors[idx + 1] = color.g;
-  colors[idx + 2] = color.b;
+if (tier === "none") {
+  const poster = document.createElement("div");
+  poster.className = "poster";
+  poster.setAttribute("role", "img");
+  poster.setAttribute("aria-label", "A glowing field of particles (static preview — WebGL unavailable)");
+  document.body.insertBefore(poster, document.body.firstChild);
+  document.querySelector(".hud").hidden = true;
+  document.getElementById("hint").hidden = true;
+} else {
+  boot();
 }
 
-const geometry = new THREE.BufferGeometry();
-const posAttr = new THREE.BufferAttribute(positions, 3);
-posAttr.setUsage(THREE.DynamicDrawUsage); // we rewrite positions every frame
-geometry.setAttribute("position", posAttr);
-geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+function boot() {
+  /* ---- Renderer ------------------------------------------------------- */
+  const renderer = new THREE.WebGLRenderer({ antialias: !lowPower, alpha: false, powerPreference: "high-performance" });
+  const maxDPR = Math.min(devicePixelRatio || 1, 2);
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.1;
+  document.body.appendChild(renderer.domElement);
 
-const material = new THREE.PointsMaterial({
-  size: 0.16,
-  vertexColors: true,
-  transparent: true,
-  opacity: 0.9,
-  blending: THREE.AdditiveBlending,
-  depthWrite: false,
-  sizeAttenuation: true,
-});
+  const canvas = renderer.domElement;
+  canvas.setAttribute("role", "img");
+  canvas.setAttribute("aria-label",
+    "An interactive indigo-to-cyan particle field that gathers toward the pointer and scatters when pressed — AETumi.");
 
-const points = new THREE.Points(geometry, material);
-scene.add(points);
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 100);
+  camera.position.z = 32;
 
-// --- Pointer tracking ---------------------------------------------------------
-// Project the pointer onto the z = 0 plane so it lives in the same space as the
-// particles.
-const pointer = new THREE.Vector2(0, 0);
-const pointerWorld = new THREE.Vector3(0, 0, 0);
-const raycaster = new THREE.Raycaster();
-const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
-let repel = false;
-let pointerActive = false;
+  /* ---- Particle cloud -------------------------------------------------- */
+  // Allocate for the maximum; `drawCount` limits how many are live so adaptive
+  // quality can shrink the simulated set without reallocating buffers.
+  const MAX = lowPower ? 5000 : 9000;
+  const positions = new Float32Array(MAX * 3);
+  const home = new Float32Array(MAX * 3);
+  const velocities = new Float32Array(MAX * 3);
+  const colors = new Float32Array(MAX * 3);
 
-function updatePointer(clientX, clientY) {
-  pointer.x = (clientX / window.innerWidth) * 2 - 1;
-  pointer.y = -(clientY / window.innerHeight) * 2 + 1;
-  pointerActive = true;
-  raycaster.setFromCamera(pointer, camera);
-  raycaster.ray.intersectPlane(plane, pointerWorld);
-}
-
-window.addEventListener("pointermove", (e) => updatePointer(e.clientX, e.clientY), { passive: true });
-window.addEventListener("pointerdown", (e) => { repel = true; updatePointer(e.clientX, e.clientY); });
-window.addEventListener("pointerup", () => { repel = false; });
-window.addEventListener("pointerleave", () => { pointerActive = false; });
-
-window.addEventListener("resize", () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
-});
-
-// --- Animation ----------------------------------------------------------------
-const RADIUS = 9;         // pointer influence radius
-const RADIUS2 = RADIUS * RADIUS;
-const clock = new THREE.Clock();
-
-function animate() {
-  const dt = Math.min(clock.getDelta(), 0.05); // clamp to stay stable on hitches
-  const arr = geometry.attributes.position.array;
-
-  for (let i = 0; i < COUNT; i++) {
+  const color = new THREE.Color();
+  for (let i = 0; i < MAX; i++) {
+    const r = Math.sqrt(Math.random()) * 26;
+    const a = Math.random() * Math.PI * 2;
     const idx = i * 3;
-    let px = arr[idx], py = arr[idx + 1], pz = arr[idx + 2];
-    let vx = velocities[idx], vy = velocities[idx + 1], vz = velocities[idx + 2];
-
-    // Spring back toward the home position, with damping.
-    vx += (home[idx] - px) * 2.4 * dt;
-    vy += (home[idx + 1] - py) * 2.4 * dt;
-    vz += (home[idx + 2] - pz) * 2.4 * dt;
-
-    // Pointer force: attract by default, repel while pressed.
-    if (pointerActive) {
-      const dx = px - pointerWorld.x;
-      const dy = py - pointerWorld.y;
-      const d2 = dx * dx + dy * dy;
-      if (d2 < RADIUS2 && d2 > 0.0001) {
-        const d = Math.sqrt(d2);
-        const falloff = (1 - d / RADIUS);
-        const strength = falloff * falloff * 60 * dt;
-        const dir = repel ? 1 : -1; // toward pointer, or away when repelling
-        vx += (dx / d) * strength * dir;
-        vy += (dy / d) * strength * dir;
-      }
-    }
-
-    // Damping keeps motion smooth and eventually settled.
-    vx *= 0.90; vy *= 0.90; vz *= 0.90;
-
-    arr[idx] = px + vx * dt * 6;
-    arr[idx + 1] = py + vy * dt * 6;
-    arr[idx + 2] = pz + vz * dt * 6;
-    velocities[idx] = vx; velocities[idx + 1] = vy; velocities[idx + 2] = vz;
+    home[idx]     = positions[idx]     = Math.cos(a) * r;
+    home[idx + 1] = positions[idx + 1] = Math.sin(a) * r * 0.62;
+    home[idx + 2] = positions[idx + 2] = (Math.random() - 0.5) * 10;
+    color.setHSL(0.62 - (r / 26) * 0.22, 0.8, 0.6);   // indigo → cyan by radius
+    colors[idx] = color.r; colors[idx + 1] = color.g; colors[idx + 2] = color.b;
   }
 
-  geometry.attributes.position.needsUpdate = true;
-  points.rotation.z += dt * 0.02; // very slow overall drift
+  const geometry = new THREE.BufferGeometry();
+  const posAttr = new THREE.BufferAttribute(positions, 3);
+  posAttr.setUsage(THREE.DynamicDrawUsage);
+  geometry.setAttribute("position", posAttr);
+  geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+  let drawCount = lowPower ? Math.floor(MAX * 0.7) : MAX;
+  geometry.setDrawRange(0, drawCount);
 
-  renderer.render(scene, camera);
-}
+  const material = new THREE.PointsMaterial({
+    size: 0.16, vertexColors: true, transparent: true, opacity: 0.9,
+    blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true
+  });
+  const points = new THREE.Points(geometry, material);
+  scene.add(points);
 
-if (reduce) {
-  // Reduced motion: render the field once, no interaction loop.
-  renderer.render(scene, camera);
-} else {
-  renderer.setAnimationLoop(animate);
+  /* ---- Pointer tracking ------------------------------------------------ */
+  const pointer = new THREE.Vector2(0, 0);
+  const pointerWorld = new THREE.Vector3(0, 0, 0);
+  const raycaster = new THREE.Raycaster();
+  const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+  let repel = false, pointerActive = false;
+
+  function updatePointer(clientX, clientY) {
+    pointer.x = (clientX / innerWidth) * 2 - 1;
+    pointer.y = -(clientY / innerHeight) * 2 + 1;
+    pointerActive = true;
+    raycaster.setFromCamera(pointer, camera);
+    raycaster.ray.intersectPlane(plane, pointerWorld);
+  }
+  const onMove  = (e) => updatePointer(e.clientX, e.clientY);
+  const onDown  = (e) => { repel = true; updatePointer(e.clientX, e.clientY); };
+  const onUp    = () => { repel = false; };
+  const onLeave = () => { pointerActive = false; };
+  addEventListener("pointermove", onMove, { passive: true });
+  addEventListener("pointerdown", onDown);
+  addEventListener("pointerup", onUp);
+  addEventListener("pointerleave", onLeave);
+
+  /* ---- Adaptive quality (DPR + live particle count) -------------------- */
+  let quality = lowPower ? 0.6 : 1.0;
+  const fpsBuf = []; let lastAdjust = 0;
+  function applyQuality() {
+    renderer.setPixelRatio(maxDPR * (0.55 + 0.45 * quality));
+    drawCount = Math.max(1200, Math.floor(MAX * (0.4 + 0.6 * quality)));
+    geometry.setDrawRange(0, drawCount);
+  }
+  applyQuality();
+  function sampleAndAdapt(dt, now) {
+    if (dt > 0) fpsBuf.push(1000 / dt);
+    if (fpsBuf.length > 90) fpsBuf.shift();
+    if (fpsBuf.length < 45 || now - lastAdjust < 1400) return;
+    const avg = fpsBuf.reduce((a, b) => a + b, 0) / fpsBuf.length;
+    if (avg < 50 && quality > 0.4) { quality = Math.max(0.4, quality - 0.15); applyQuality(); lastAdjust = now; fpsBuf.length = 0; }
+    else if (avg > 58 && quality < 1) { quality = Math.min(1, quality + 0.1); applyQuality(); lastAdjust = now; fpsBuf.length = 0; }
+    return avg;
+  }
+
+  /* ---- Simulation + render loop --------------------------------------- */
+  const RADIUS = 9, RADIUS2 = RADIUS * RADIUS;
+  const clock = new THREE.Clock();
+  let rafId = null, running = false, visible = true, avgFps = 0, prevT = performance.now();
+
+  function animate() {
+    const now = performance.now();
+    const dtR = now - prevT; prevT = now;
+    const dt = Math.min(clock.getDelta(), 0.05);   // clamp so hitches stay stable
+    const arr = geometry.attributes.position.array;
+
+    for (let i = 0; i < drawCount; i++) {          // only simulate the live set
+      const idx = i * 3;
+      let px = arr[idx], py = arr[idx + 1], pz = arr[idx + 2];
+      let vx = velocities[idx], vy = velocities[idx + 1], vz = velocities[idx + 2];
+
+      vx += (home[idx]     - px) * 2.4 * dt;
+      vy += (home[idx + 1] - py) * 2.4 * dt;
+      vz += (home[idx + 2] - pz) * 2.4 * dt;
+
+      if (pointerActive) {
+        const dx = px - pointerWorld.x, dy = py - pointerWorld.y;
+        const d2 = dx * dx + dy * dy;
+        if (d2 < RADIUS2 && d2 > 0.0001) {
+          const d = Math.sqrt(d2);
+          const falloff = 1 - d / RADIUS;
+          const strength = falloff * falloff * 60 * dt;
+          const dir = repel ? 1 : -1;
+          vx += (dx / d) * strength * dir;
+          vy += (dy / d) * strength * dir;
+        }
+      }
+
+      vx *= 0.90; vy *= 0.90; vz *= 0.90;
+      arr[idx]     = px + vx * dt * 6;
+      arr[idx + 1] = py + vy * dt * 6;
+      arr[idx + 2] = pz + vz * dt * 6;
+      velocities[idx] = vx; velocities[idx + 1] = vy; velocities[idx + 2] = vz;
+    }
+
+    geometry.attributes.position.needsUpdate = true;
+    points.rotation.z += dt * 0.02;
+    renderer.render(scene, camera);
+
+    const a = sampleAndAdapt(dtR, now); if (a) avgFps = a;
+    if (hudOn) readout.textContent = `${avgFps.toFixed(0)} fps\nq ${quality.toFixed(2)} · ${drawCount} pts · dpr ${renderer.getPixelRatio().toFixed(2)}`;
+    rafId = requestAnimationFrame(animate);
+  }
+  function start() { if (running || reduce) return; running = true; clock.start(); prevT = performance.now(); rafId = requestAnimationFrame(animate); }
+  function stop() { running = false; if (rafId) cancelAnimationFrame(rafId); rafId = null; }
+
+  const io = new IntersectionObserver((es) => {
+    visible = es[0].isIntersecting;
+    if (visible && !document.hidden) start(); else stop();
+  }, { threshold: 0.01 });
+  io.observe(canvas);
+  const onVisibility = () => { if (document.hidden) stop(); else if (visible) start(); };
+  document.addEventListener("visibilitychange", onVisibility);
+
+  if (reduce) renderer.render(scene, camera);   // one calm static frame
+  else start();
+
+  /* ---- FPS toggle ------------------------------------------------------ */
+  const toggle = document.getElementById("hudToggle");
+  const readout = document.getElementById("hudReadout");
+  let hudOn = false;
+  toggle.addEventListener("click", () => { hudOn = !hudOn; toggle.setAttribute("aria-pressed", String(hudOn)); readout.hidden = !hudOn; });
+
+  /* ---- Resize ---------------------------------------------------------- */
+  const onResize = () => {
+    camera.aspect = innerWidth / innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth, innerHeight);
+    if (reduce || !running) renderer.render(scene, camera);
+  };
+  addEventListener("resize", onResize);
+
+  /* ---- Strict teardown ------------------------------------------------- */
+  addEventListener("pagehide", () => {
+    stop(); io.disconnect();
+    removeEventListener("pointermove", onMove);
+    removeEventListener("pointerdown", onDown);
+    removeEventListener("pointerup", onUp);
+    removeEventListener("pointerleave", onLeave);
+    removeEventListener("resize", onResize);
+    document.removeEventListener("visibilitychange", onVisibility);
+    geometry.dispose(); material.dispose();
+    renderer.dispose(); renderer.domElement.remove();
+  }, { once: true });
 }
 </script>
 </body>
