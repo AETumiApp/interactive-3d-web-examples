@@ -1,63 +1,19 @@
-# interactive-3d-web-examples — examples
+# interactive-3d-web-examples — Examples
 
-Interactive 3D built with Three.js — no build step, just open the file.
+Interactive, **production-grade** 3D built with Three.js (r160) — no build step, just open the file.
 
 | File | Description |
 | --- | --- |
-| [`pointer-particles.html`](./pointer-particles.html) | A 9,000-point `BufferGeometry` particle field that springs back to a home layout while the pointer attracts particles (or repels them while pressed). Additive blending for glow; reduced-motion viewers get a calm static field. |
+| [`pointer-particles.html`](./pointer-particles.html) | A `BufferGeometry` particle field (up to 9,000 points) that springs back to a home layout while the pointer attracts particles — or repels them while pressed. Additive blending for glow; the live particle count scales with measured performance. |
 
-Loads Three.js r160 (`0.160.0`) from cdnjs via an import map. The pointer is
-projected onto the `z = 0` plane with a `Raycaster`, particles integrate a
-damped spring toward their rest positions, and the device pixel ratio is capped
-at 2.
+### Expert / production features (every example)
+
+- **Capability detection + graceful fallback** — probes WebGL2 → WebGL → none. With no WebGL context (or `prefers-reduced-motion`) it paints a tasteful CSS starfield/gradient poster instead of a blank canvas; low-power devices start with a smaller particle budget.
+- **Adaptive performance** — DPR capped at 2; a rolling FPS average steps DPR **and the live particle count** down below 50 fps and back up above 58 fps with hysteresis (the spring simulation only integrates the live set, so cost drops with count). The loop pauses when the canvas is offscreen (`IntersectionObserver`) or the tab is hidden.
+- **Strict cleanup** — one teardown on `pagehide` removes every pointer/resize listener, cancels rAF, and disposes the geometry, material and renderer.
+- **Accessibility** — the canvas is `role="img"` with an `aria-label`; the optional FPS/quality readout is a real keyboard-focusable `<button>` with a visible focus ring; motion respects `prefers-reduced-motion` (calm static field, no interaction loop).
+- **Premium look** — ACES Filmic tone mapping and an indigo→cyan radial hue ramp with additive glow.
+
+Three.js r160 is loaded as ES modules through an importmap on **jsDelivr only** (`three` + `three/addons/`). The pointer is projected onto the `z = 0` plane with a `Raycaster`, and particles integrate a damped spring toward their rest positions.
 
 Part of AETumi's interactive 3D examples hub: https://aetumi.app/interactive
-
----
-
-## Example backlog / roadmap
-
-# Interactive 3D Web Example Backlog
-
-## Planned examples
-
-### Product hotspot experience
-
-3D product with accessible HTML hotspot labels and clear mobile interaction.
-
-### Camera-led story
-
-User-selected chapters move the camera to meaningful positions without hiding navigation inside the scene.
-
-### Cursor-reactive visual
-
-Decorative response that never blocks links or buttons and degrades cleanly on touch devices.
-
-### Interactive background
-
-A subtle WebGL layer that enhances the page without becoming the page.
-
-### Spatial portfolio
-
-Explore project cards through 3D positioning while preserving normal semantic links and keyboard access.
-
-### Capability fallback
-
-Compare the full interactive version with a static or simplified state for reduced motion and constrained devices.
-
-## Evaluation criteria
-
-Each example should answer:
-
-- What user action starts the interaction?
-- What feedback confirms the action?
-- Does the experience work on touch?
-- Is important content available outside canvas?
-- What happens with reduced motion?
-- How is performance measured?
-
-## AETumi links
-
-- https://aetumi.app/interactive-websites/
-- https://aetumi.app/3d-websites/
-- https://aetumi.app/threejs/
