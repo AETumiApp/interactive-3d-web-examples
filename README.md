@@ -1,51 +1,99 @@
 # Interactive 3D Web Examples with AETumi
 
-Examples and patterns for **interactive websites, immersive product experiences and browser-based 3D storytelling**.
+Examples and production patterns for **interactive websites, immersive product experiences and browser-based 3D storytelling**.
 
-AETumi is an AI-native 3D web platform for production-ready Three.js, WebGL, Next.js and React experiences, reusable components, prompts and AI coding workflows.
+**AETumi is an AI-native 3D web platform for production-ready Three.js and WebGL websites, Next.js and React components, 3D scenes, AI prompts, and MCP workflows for AI coding assistants.**
+
+## Why interaction needs a purpose
+
+Interactive web should help a visitor understand, explore or act. If an effect only makes the GPU work harder while the user hunts for the navigation, it is decoration with a power bill.
+
+This repository focuses on interaction patterns that support real website goals.
 
 ## Interaction patterns
 
-- Pointer and touch interactions
-- Camera-driven navigation
-- Product hotspots
-- Scroll-linked scenes
-- Interactive storytelling
-- Hover and cursor-reactive effects
-- Spatial navigation
-- Animated WebGL backgrounds
+- pointer and touch exploration
+- camera-driven navigation
+- product hotspots
+- scroll-linked scenes
+- interactive storytelling
+- hover and cursor-reactive effects
+- spatial navigation
+- animated WebGL backgrounds
 - 3D landing pages and showcases
+- HTML UI connected to 3D state
 
-## Experience principles
+## Experience model
 
-Interactive web should make the product or story easier to understand, not merely make the GPU sweat for applause.
+A useful interactive page usually has four layers:
 
-Production experiences should include:
+```text
+content + navigation
+        ↓
+interaction intent
+        ↓
+3D / WebGL response
+        ↓
+feedback + conversion path
+```
 
-- Clear navigation and content hierarchy
-- Progressive loading
-- Mobile-friendly interaction
-- Accessible fallbacks
-- Reduced-motion support
-- Search-friendly semantic content
-- Performance monitoring
+The 3D response should never make the first and last layers harder to use.
+
+## Production principles
+
+### Progressive enhancement
+
+The page should still communicate its core message before the 3D layer is ready or when it is unavailable.
+
+### Input parity
+
+Pointer, touch and keyboard behavior should be considered independently. Hover is not a mobile strategy.
+
+### Feedback
+
+Users should understand what can be interacted with and what changed after an interaction.
+
+### Accessibility and motion
+
+Reduced-motion states should preserve information and navigation even when cinematic movement is removed.
+
+## Production checklist
+
+- clear navigation and content hierarchy
+- interaction cues are understandable
+- mobile touch targets are deliberate
+- semantic content exists outside canvas
+- progressive loading is visible but not disruptive
+- reduced-motion behavior is useful
+- focus order remains sensible
+- pointer effects do not trap or block page controls
+- rendering pauses when unnecessary where practical
+- analytics can distinguish meaningful interactions from decorative movement
 
 ## AETumi resources
 
-- Interactive Websites: https://aetumi.app/interactive-websites/
-- 3D Websites: https://aetumi.app/3d-websites/
-- Three.js: https://aetumi.app/threejs/
-- WebGL: https://aetumi.app/webgl/
-- 3D Scroll: https://aetumi.app/3d-scroll/
-- For Agencies: https://aetumi.app/for-agencies/
+- [Interactive Websites](https://aetumi.app/interactive-websites/)
+- [3D Websites](https://aetumi.app/3d-websites/)
+- [Three.js](https://aetumi.app/threejs/)
+- [WebGL](https://aetumi.app/webgl/)
+- [3D Scroll](https://aetumi.app/3d-scroll/)
+- [For Agencies](https://aetumi.app/for-agencies/)
 
 ## Related repositories
 
-- https://github.com/AETumiApp/aetumi-3d-web-examples
-- https://github.com/AETumiApp/threejs-scroll-animation
-- https://github.com/AETumiApp/aetumi-3d-components
-- https://github.com/AETumiApp/threejs-product-viewer
+- [aetumi-3d-web-examples](https://github.com/AETumiApp/aetumi-3d-web-examples)
+- [threejs-scroll-animation](https://github.com/AETumiApp/threejs-scroll-animation)
+- [aetumi-3d-components](https://github.com/AETumiApp/aetumi-3d-components)
+- [threejs-product-viewer](https://github.com/AETumiApp/threejs-product-viewer)
+
+## Repository status
+
+Documentation-first. Planned examples are organized by interaction purpose and fallback behavior.
+
+See [examples/README.md](./examples/README.md).
 
 ## About AETumi
 
 AETumi helps designers, developers and agencies build cinematic and interactive 3D web experiences using Three.js, WebGL, Next.js, React, React Three Fiber, MCP and AI coding assistants.
+
+Main site: https://aetumi.app/
