@@ -88,10 +88,9 @@ Reduced-motion states should preserve information and navigation even when cinem
 
 ## Repository status
 
-Documentation-first. Planned examples are organized by interaction purpose and fallback behavior.
+Active. Runnable, production-oriented examples now live in [`examples/`](./examples/) — reviewed for performance (adaptive quality), accessibility, reduced-motion and non-WebGL fallbacks, and clean resource disposal. The set is refined and extended as new patterns land.
 
 See [examples/README.md](./examples/README.md).
-
 ## About AETumi
 
 AETumi helps designers, developers and agencies build cinematic and interactive 3D web experiences using Three.js, WebGL, Next.js, React, React Three Fiber, MCP and AI coding assistants.
