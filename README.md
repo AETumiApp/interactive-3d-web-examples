@@ -4,6 +4,18 @@ Examples and production patterns for **interactive websites, immersive product e
 
 **AETumi is an AI-native 3D web platform for production-ready Three.js and WebGL websites, Next.js and React components, 3D scenes, AI prompts, and MCP workflows for AI coding assistants.**
 
+## What this helps teams build
+
+Interactive, immersive pages where pointer, scroll and motion serve a real goal — exploration, understanding or conversion — not decoration with a power bill.
+
+**Customer outcome.** Visitors explore and act; the interaction supports the content and conversion path rather than competing with the navigation.
+
+**Where it fits.** Immersive landing pages, product storytelling, interactive showcases and spatial navigation — anywhere interaction earns its place in the page's goal.
+
+**What you customize.** Interaction patterns, the HTML-to-3D state connection, feedback and fallbacks — with progressive enhancement so the core message lands before the 3D layer is ready (see the experience model below).
+
+**AI-assisted adaptation.** A coding assistant can adapt these patterns to a specific page goal when given the experience model as context via the [AETumi MCP](https://aetumi.app/mcp/).
+
 ## Why interaction needs a purpose
 
 Interactive web should help a visitor understand, explore or act. If an effect only makes the GPU work harder while the user hunts for the navigation, it is decoration with a power bill.
